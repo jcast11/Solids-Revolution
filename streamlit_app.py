@@ -266,6 +266,9 @@ param = np.linspace(a, b, int(n_param))
 try:
     v1 = f_num(param)
     v2 = g_num(param)
+    if np.isscalar(v2):
+        v2 = np.full_like(param, float(v2), dtype=float)
+
     if not (np.all(np.isfinite(v1)) and np.all(np.isfinite(v2))):
         st.error("One function produced non-finite values on the interval. Adjust the interval or functions.")
         st.stop()
