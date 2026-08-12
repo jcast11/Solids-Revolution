@@ -624,12 +624,3 @@ st.info(
     "This version avoids several of those components and uses a more robust layout."
 )
 
-st.markdown(
-    """
-    <div class="small-note">
-    Teaching idea: start with n = 4 or 6 and visible gaps, then increase n while students watch the discrete solid converge. 
-    The <b>Bold red</b> preset is intentionally styled to look closer to a textbook/app disk stack.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
