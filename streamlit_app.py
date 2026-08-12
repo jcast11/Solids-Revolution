@@ -62,6 +62,28 @@ def as_array(values, template):
     return np.asarray(values, dtype=float)
 
 
+def rgba_from_hex(hex_color: str, alpha: float):
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6:
+        return f"rgba(59,130,246,{alpha})"
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def build_step_outline(lefts, rights, heights):
+    xs, ys = [], []
+    for i, (xL, xR, h) in enumerate(zip(lefts, rights, heights)):
+        if i == 0:
+            xs.extend([xL, xR])
+            ys.extend([h, h])
+        else:
+            xs.extend([xL, xL, xR])
+            ys.extend([ys[-1], h, h])
+    return xs, ys
+
+
 # ============================================================
 # Geometry helpers
 # ============================================================
@@ -201,6 +223,9 @@ def palette_pack(name: str):
         "font": "#1E293B",
         "grid": "#DCE3EC",
         "minor_grid": "#EEF2F7",
+        "rect_fill": rgba_from_hex(base["axis2d"], 0.26),
+        "rect_line": rgba_from_hex(base["curve"], 0.55),
+        "step_line": rgba_from_hex(base["curve"], 0.78),
     }
 
 
@@ -366,7 +391,7 @@ st.markdown(
 # ============================================================
 st.divider()
 st.header("1. Explore the 2D region")
-st.caption("The shaded region is the part that will rotate around the red axis.")
+st.caption("The shaded region rotates around the red axis. The staircase rectangles show the disk-method approximation in the 2D picture.")
 
 fig2d = go.Figure()
 
@@ -380,6 +405,38 @@ fig2d.add_trace(
         line=dict(width=0),
         fillcolor=colors["region"],
         name="Region",
+        hoverinfo="skip",
+    )
+)
+
+# Riemann rectangles in the 2D panel
+for i, (xL, xR, yR) in enumerate(zip(lefts, rights, f_star), start=1):
+    fig2d.add_trace(
+        go.Scatter(
+            x=[xL, xL, xR, xR, xL],
+            y=[axis_c, yR, yR, axis_c, axis_c],
+            fill="toself",
+            mode="lines",
+            line=dict(width=1.2, color=colors["rect_line"]),
+            fillcolor=colors["rect_fill"],
+            hovertemplate=(
+                f"Disk {i}<br>interval = [{xL:.5g}, {xR:.5g}]<br>"
+                f"sample height = {float(yR):.5g}<br>radius = {float(abs(yR-axis_c)):.5g}<extra></extra>"
+            ),
+            name="Rectangles" if i == 1 else None,
+            legendgroup="rectangles",
+            showlegend=(i == 1),
+        )
+    )
+
+step_x, step_y = build_step_outline(lefts, rights, f_star)
+fig2d.add_trace(
+    go.Scatter(
+        x=step_x,
+        y=step_y,
+        mode="lines",
+        line=dict(width=2.2, color=colors["step_line"]),
+        name="rectangle tops",
         hoverinfo="skip",
     )
 )
@@ -517,7 +574,7 @@ st.plotly_chart(
         "modeBarButtonsToRemove": ["lasso2d", "select2d"],
     },
 )
-st.caption("2D panel: drag to pan · scroll to zoom · double-click to reset the view.")
+st.caption("2D panel: drag to pan · scroll to zoom · double-click to reset the view. The rectangles now match the disk-method slices more realistically.")
 
 
 # ============================================================
@@ -563,7 +620,7 @@ with exact_col:
 # ============================================================
 st.divider()
 st.header(f"3. Explore the 3D approximation with {n_disks} disks")
-st.caption("Drag the solid to rotate it. The small gaps make the individual disks easier to see; they do not change the mathematics.")
+st.caption("Drag the solid to rotate it. Its default orientation now follows the 2D picture: x increases from left to right, matching the region panel.")
 
 fig3d = go.Figure()
 
@@ -720,8 +777,9 @@ fig3d.update_layout(
         zaxis_title="z",
         aspectmode="data",
         bgcolor=colors["scene_bg"],
-        camera=dict(eye=dict(x=1.65, y=1.35, z=0.90)),
+        camera=dict(eye=dict(x=0.08, y=2.55, z=0.22), up=dict(x=0, y=0, z=1)),
         xaxis=dict(
+            range=[a - axis_pad, b + axis_pad],
             showbackground=True,
             backgroundcolor="#F8FAFC",
             gridcolor=colors["grid"],
