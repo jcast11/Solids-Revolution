@@ -19,35 +19,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Light visual polish. No custom metric-card HTML is used anywhere.
-st.markdown(
-    """
-    <style>
-        .block-container {
-            max-width: 1450px;
-            padding-top: 2.0rem;
-            padding-bottom: 3rem;
-        }
-        [data-testid="stSidebar"] {
-            background: #f7f9fc;
-        }
-        div[data-testid="stMetric"] {
-            background: white;
-            border: 1px solid #e4e9f1;
-            padding: 14px 16px;
-            border-radius: 12px;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-        }
-        .step-note {
-            color: #64748b;
-            font-size: 0.95rem;
-            margin-top: -0.35rem;
-            margin-bottom: 0.6rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Keep the app deliberately HTML/CSS-free for maximum Streamlit Cloud compatibility.
 
 
 # ============================================================
@@ -372,7 +344,7 @@ rel_error = abs_error / abs(exact_volume_num) if not np.isclose(exact_volume_num
 # Header
 # ============================================================
 st.title("Disk Method Explorer")
-st.caption("From a 2D region → to a disk approximation → to the 3D solid of revolution.")
+st.caption("2D region  →  disk approximation  →  3D solid of revolution")
 st.markdown(
     "Change the function, interval, axis of rotation, or number of disks. "
     "Then drag the 3D model to inspect the solid from any angle."
@@ -384,10 +356,7 @@ st.markdown(
 # ============================================================
 st.divider()
 st.header("1. Explore the 2D region")
-st.markdown(
-    '<div class="step-note">The shaded region is the part that will rotate around the red axis.</div>',
-    unsafe_allow_html=True,
-)
+st.caption("The shaded region is the part that will rotate around the red axis.")
 
 fig2d = go.Figure()
 
@@ -546,20 +515,22 @@ st.caption("2D panel: drag to pan · scroll to zoom · double-click to reset the
 # ============================================================
 st.divider()
 st.header("2. Connect the picture to the disk formula")
-st.markdown(
-    '<div class="step-note">Each disk has thickness Δx and radius |f(x*) − c|.</div>',
-    unsafe_allow_html=True,
-)
+st.caption("Each disk has thickness Δx and radius |f(x*) − c|.")
 
-m1, m2, m3, m4 = st.columns(4, gap="medium")
+m1, m2, m3, m4 = st.columns(4, gap="large")
 with m1:
-    st.metric("Δx", f"{dx:.5g}")
+    st.caption("Δx")
+    st.markdown(f"### {dx:.5g}")
 with m2:
-    st.metric("Disk approximation", f"{approx_volume:.7g}")
+    st.caption("Disk approximation")
+    st.markdown(f"### {approx_volume:.7g}")
 with m3:
-    st.metric("Actual volume", f"{exact_volume_num:.7g}")
+    st.caption("Actual volume")
+    st.markdown(f"### {exact_volume_num:.7g}")
 with m4:
-    st.metric("Relative error", "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%")
+    st.caption("Relative error")
+    error_text = "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%"
+    st.markdown(f"### {error_text}")
 
 formula_col, exact_col = st.columns(2, gap="large")
 with formula_col:
@@ -582,10 +553,7 @@ with exact_col:
 # ============================================================
 st.divider()
 st.header(f"3. Explore the 3D approximation with {n_disks} disks")
-st.markdown(
-    '<div class="step-note">Drag the solid to rotate it. The small gaps make the individual disks easier to see; they do not change the mathematics.</div>',
-    unsafe_allow_html=True,
-)
+st.caption("Drag the solid to rotate it. The small gaps make the individual disks easier to see; they do not change the mathematics.")
 
 fig3d = go.Figure()
 
