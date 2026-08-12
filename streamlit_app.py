@@ -19,35 +19,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown(
-    """
-    <style>
-        .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
-        .small-note {opacity: 0.78; font-size: 0.92rem;}
-        .metric-card {
-            border: 1px solid rgba(120,120,120,0.18);
-            border-radius: 14px;
-            padding: 0.85rem 1rem;
-            background: linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(244,244,244,1) 100%);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-            min-height: 90px;
-        }
-        .metric-label {
-            font-size: 0.92rem;
-            color: #5B6470;
-            margin-bottom: 0.2rem;
-        }
-        .metric-value {
-            font-size: 1.55rem;
-            font-weight: 700;
-            color: #111827;
-            line-height: 1.2;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 
 # ============================================================
 # Parsing helpers
@@ -618,9 +589,4 @@ if show_table == "Yes":
             }
         )
     st.table(rows)
-
-st.info(
-    "If the old app showed red 'Importing a module script failed' boxes, that was likely a frontend Streamlit component issue. "
-    "This version avoids several of those components and uses a more robust layout."
-)
 
