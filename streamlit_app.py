@@ -14,9 +14,39 @@ import plotly.graph_objects as go
 # Streamlit setup
 # ============================================================
 st.set_page_config(
-    page_title="Disk Method Lab",
-    page_icon="🔴",
+    page_title="Disk Method Explorer",
+    page_icon="🟦",
     layout="wide",
+)
+
+# Light visual polish. No custom metric-card HTML is used anywhere.
+st.markdown(
+    """
+    <style>
+        .block-container {
+            max-width: 1450px;
+            padding-top: 2.0rem;
+            padding-bottom: 3rem;
+        }
+        [data-testid="stSidebar"] {
+            background: #f7f9fc;
+        }
+        div[data-testid="stMetric"] {
+            background: white;
+            border: 1px solid #e4e9f1;
+            padding: 14px 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .step-note {
+            color: #64748b;
+            font-size: 0.95rem;
+            margin-top: -0.35rem;
+            margin-bottom: 0.6rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -63,7 +93,7 @@ def as_array(values, template):
 # ============================================================
 # Geometry helpers
 # ============================================================
-def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=56):
+def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=72):
     """Closed cylinder for one disk, axis parallel to x."""
     theta = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
 
@@ -104,7 +134,7 @@ def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=56):
     return x, y, z, I, J, K
 
 
-def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=80):
+def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=96):
     theta = np.linspace(0, 2 * np.pi, n_theta)
     X = np.tile(xs, (theta.size, 1))
     TH = np.tile(theta.reshape(-1, 1), (1, xs.size))
@@ -114,7 +144,7 @@ def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=80):
     return X, Y, Z
 
 
-def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=72):
+def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=80):
     theta = np.linspace(0, 2 * np.pi, n_theta)
     X, Y, Z = [], [], []
     for xpos, radius in zip(x_positions, radii):
@@ -127,46 +157,87 @@ def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=72):
     return X, Y, Z
 
 
-def style_pack(style_name: str):
-    if style_name == "Bold red (recommended)":
-        return {
-            "disk_color": "#D10000",
-            "rim_color": "rgba(80,0,0,0.95)",
-            "curve_color": "#111111",
-            "region_fill": "rgba(230, 35, 35, 0.24)",
-            "sample_color": "#00C853",
-            "partition_color": "rgba(220, 40, 40, 0.48)",
-            "axis2d": "#E31B1B",
-            "axis3d": "#CFCFCF",
-            "ghost_color": "#F8B4B4",
-            "scene_bg": "#080808",
-            "paper_bg": "#080808",
-            "font_color": "#F3F4F6",
-            "grid_color": "rgba(255,255,255,0.12)",
-        }
+# ============================================================
+# Color palettes
+# ============================================================
+def palette_pack(name: str):
+    palettes = {
+        "Ocean blue": {
+            "disk_colors": ["#2563EB", "#3B82F6", "#60A5FA"],
+            "rim": "rgba(20, 64, 145, 0.82)",
+            "curve": "#111827",
+            "region": "rgba(59, 130, 246, 0.22)",
+            "sample": "#16A34A",
+            "partition": "rgba(37, 99, 235, 0.38)",
+            "axis2d": "#EF4444",
+            "axis3d": "#475569",
+            "smooth": "#93C5FD",
+        },
+        "Emerald teal": {
+            "disk_colors": ["#0F766E", "#14B8A6", "#5EEAD4"],
+            "rim": "rgba(15, 93, 86, 0.82)",
+            "curve": "#111827",
+            "region": "rgba(20, 184, 166, 0.22)",
+            "sample": "#F59E0B",
+            "partition": "rgba(13, 148, 136, 0.38)",
+            "axis2d": "#DC2626",
+            "axis3d": "#475569",
+            "smooth": "#99F6E4",
+        },
+        "Sunset coral": {
+            "disk_colors": ["#EA580C", "#F97316", "#FB923C"],
+            "rim": "rgba(154, 52, 18, 0.82)",
+            "curve": "#111827",
+            "region": "rgba(249, 115, 22, 0.22)",
+            "sample": "#0EA5E9",
+            "partition": "rgba(234, 88, 12, 0.38)",
+            "axis2d": "#BE123C",
+            "axis3d": "#475569",
+            "smooth": "#FDBA74",
+        },
+        "Violet": {
+            "disk_colors": ["#6D28D9", "#8B5CF6", "#A78BFA"],
+            "rim": "rgba(76, 29, 149, 0.82)",
+            "curve": "#111827",
+            "region": "rgba(139, 92, 246, 0.22)",
+            "sample": "#22C55E",
+            "partition": "rgba(124, 58, 237, 0.38)",
+            "axis2d": "#E11D48",
+            "axis3d": "#475569",
+            "smooth": "#C4B5FD",
+        },
+        "Teaching rainbow": {
+            "disk_colors": [
+                "#2563EB", "#06B6D4", "#14B8A6", "#22C55E",
+                "#EAB308", "#F97316", "#EF4444", "#8B5CF6",
+            ],
+            "rim": "rgba(51, 65, 85, 0.72)",
+            "curve": "#111827",
+            "region": "rgba(99, 102, 241, 0.18)",
+            "sample": "#16A34A",
+            "partition": "rgba(99, 102, 241, 0.32)",
+            "axis2d": "#DC2626",
+            "axis3d": "#475569",
+            "smooth": "#CBD5E1",
+        },
+    }
+    base = palettes[name]
     return {
-        "disk_color": "#D9A441",
-        "rim_color": "rgba(91,65,24,0.88)",
-        "curve_color": "#2563EB",
-        "region_fill": "rgba(74, 144, 226, 0.18)",
-        "sample_color": "#D97706",
-        "partition_color": "rgba(217,119,6,0.55)",
-        "axis2d": "#374151",
-        "axis3d": "#111827",
-        "ghost_color": "#60A5FA",
-        "scene_bg": "#FFFFFF",
+        **base,
+        "scene_bg": "#F8FAFC",
         "paper_bg": "#FFFFFF",
-        "font_color": "#111827",
-        "grid_color": "rgba(0,0,0,0.10)",
+        "font": "#1E293B",
+        "grid": "#DCE3EC",
+        "minor_grid": "#EEF2F7",
     }
 
 
 # ============================================================
-# Sidebar controls
+# Sidebar controls — simplified for students
 # ============================================================
 with st.sidebar:
     st.header("Disk Method Controls")
-    st.caption("This version only does the disk method for a region between y = f(x) and y = c, revolved around the horizontal line y = c.")
+    st.caption("Build a solid by revolving the region between y = f(x) and y = c around the horizontal line y = c.")
 
     f_str = st.text_input("Curve  y = f(x)", value="sqrt(x)")
 
@@ -188,27 +259,26 @@ with st.sidebar:
         index=0,
     )
 
-    st.divider()
-    st.subheader("3D appearance")
-    style_name = st.selectbox(
-        "Color/style",
-        ["Bold red (recommended)", "Textbook gold"],
-        index=0,
-    )
-    visual_gap_pct = st.slider(
-        "Visual separation between disks",
-        min_value=0,
-        max_value=20,
-        value=8,
-        step=1,
-        help="This only separates the disks visually. The volume calculation still uses the full Δx.",
-    )
-    n_theta = st.slider("Disk roundness", 32, 120, 72, 8)
-    show_rims = st.selectbox("Emphasize disk edges", ["Yes", "No"], index=0) == "Yes"
-    show_true_surface = st.selectbox("Show true smooth solid", ["No", "Yes"], index=0) == "Yes"
-    show_partitions = st.selectbox("Show partition lines in 2D", ["Yes", "No"], index=0) == "Yes"
+    with st.expander("Visual options", expanded=False):
+        palette_name = st.selectbox(
+            "Color palette",
+            ["Ocean blue", "Emerald teal", "Sunset coral", "Violet", "Teaching rainbow"],
+            index=0,
+        )
+        visual_gap_pct = st.slider(
+            "Visual separation between disks",
+            min_value=0,
+            max_value=24,
+            value=12,
+            step=1,
+            help="Display-only spacing. The volume calculation still uses the full mathematical thickness Δx.",
+        )
+        show_rims = st.toggle("Emphasize disk edges", value=True)
+        show_true_surface = st.toggle("Overlay true smooth solid", value=False)
+        show_partitions = st.toggle("Show partition lines in 2D", value=True)
+        n_theta = st.slider("Disk roundness", 40, 128, 80, 8)
 
-colors = style_pack(style_name)
+colors = palette_pack(palette_name)
 
 
 # ============================================================
@@ -229,7 +299,7 @@ except Exception as exc:
     st.error(f"I could not parse f(x). Details: {exc}")
     st.stop()
 
-xs = np.linspace(a, b, 700)
+xs = np.linspace(a, b, 800)
 try:
     f_vals = as_array(f_num(xs), xs)
 except Exception as exc:
@@ -301,278 +371,425 @@ rel_error = abs_error / abs(exact_volume_num) if not np.isclose(exact_volume_num
 # ============================================================
 # Header
 # ============================================================
-st.title("Disk Method Lab")
+st.title("Disk Method Explorer")
+st.caption("From a 2D region → to a disk approximation → to the 3D solid of revolution.")
 st.markdown(
-    "Move the **number of disks** slider and watch the discrete solid converge toward the true solid of revolution. "
-    "Each cylinder is one term of the disk-method Riemann sum."
+    "Change the function, interval, axis of rotation, or number of disks. "
+    "Then drag the 3D model to inspect the solid from any angle."
 )
 
 
-def metric_card(label, value):
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">{label}</div>
-            <div class="metric-value">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+# ============================================================
+# STEP 1 — GeoGebra-style 2D panel
+# ============================================================
+st.divider()
+st.header("1. Explore the 2D region")
+st.markdown(
+    '<div class="step-note">The shaded region is the part that will rotate around the red axis.</div>',
+    unsafe_allow_html=True,
+)
+
+fig2d = go.Figure()
+
+# Region fill
+fig2d.add_trace(
+    go.Scatter(
+        x=np.concatenate([xs, xs[::-1]]),
+        y=np.concatenate([f_vals, np.full_like(xs, axis_c)[::-1]]),
+        fill="toself",
+        mode="lines",
+        line=dict(width=0),
+        fillcolor=colors["region"],
+        name="Region",
+        hoverinfo="skip",
     )
+)
 
+# Function curve
+fig2d.add_trace(
+    go.Scatter(
+        x=xs,
+        y=f_vals,
+        mode="lines",
+        line=dict(width=3.5, color=colors["curve"]),
+        name="y = f(x)",
+        hovertemplate="x = %{x:.4g}<br>y = %{y:.4g}<extra></extra>",
+    )
+)
 
-mc1, mc2, mc3, mc4 = st.columns(4)
-with mc1:
-    metric_card("Δx", f"{dx:.5g}")
-with mc2:
-    metric_card("Disk approximation", f"{approx_volume:.7g}")
-with mc3:
-    metric_card("Actual volume", f"{exact_volume_num:.7g}")
-with mc4:
-    metric_card("Relative error", "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%")
+# Axis of rotation
+fig2d.add_trace(
+    go.Scatter(
+        x=[a, b],
+        y=[axis_c, axis_c],
+        mode="lines",
+        line=dict(width=3, color=colors["axis2d"]),
+        name="axis y = c",
+        hoverinfo="skip",
+    )
+)
 
+# Sample points
+fig2d.add_trace(
+    go.Scatter(
+        x=x_star,
+        y=f_star,
+        mode="markers",
+        marker=dict(
+            size=9,
+            color=colors["sample"],
+            line=dict(width=1.2, color="#FFFFFF"),
+        ),
+        name="radius samples",
+        customdata=np.column_stack([np.arange(1, n_disks + 1), radii]),
+        hovertemplate=(
+            "Disk %{customdata[0]:.0f}<br>"
+            "x* = %{x:.5g}<br>"
+            "radius = %{customdata[1]:.5g}<extra></extra>"
+        ),
+    )
+)
 
-# ============================================================
-# Main plots
-# ============================================================
-left_col, right_col = st.columns([0.85, 1.35], gap="large")
-
-with left_col:
-    st.subheader("1. Region and partition")
-    fig2d = go.Figure()
-
+if show_partitions:
+    px, py = [], []
+    for edge in edges:
+        try:
+            y_edge = float(np.asarray(f_num(edge)))
+        except Exception:
+            continue
+        px.extend([edge, edge, None])
+        py.extend([axis_c, y_edge, None])
     fig2d.add_trace(
         go.Scatter(
-            x=np.concatenate([xs, xs[::-1]]),
-            y=np.concatenate([f_vals, np.full_like(xs, axis_c)[::-1]]),
-            fill="toself",
+            x=px,
+            y=py,
             mode="lines",
-            line=dict(width=0),
-            fillcolor=colors["region_fill"],
-            name="Region",
+            line=dict(width=1.2, color=colors["partition"]),
+            name="partitions",
             hoverinfo="skip",
         )
     )
-    fig2d.add_trace(
-        go.Scatter(
-            x=xs,
-            y=f_vals,
-            mode="lines",
-            line=dict(width=3, color=colors["curve_color"]),
-            name="y = f(x)",
-        )
-    )
-    fig2d.add_trace(
-        go.Scatter(
-            x=[a, b],
-            y=[axis_c, axis_c],
-            mode="lines",
-            line=dict(width=3, color=colors["axis2d"]),
-            name="axis y = c",
-        )
-    )
-    fig2d.add_trace(
-        go.Scatter(
-            x=x_star,
-            y=f_star,
-            mode="markers",
-            marker=dict(size=8, color=colors["sample_color"], line=dict(width=1, color="#111111")),
-            name="radius samples",
-            customdata=np.column_stack([np.arange(1, n_disks + 1), radii]),
-            hovertemplate="Disk %{customdata[0]:.0f}<br>x* = %{x:.5g}<br>R = %{customdata[1]:.5g}<extra></extra>",
-        )
-    )
 
-    if show_partitions:
-        px, py = [], []
-        for edge in edges:
-            try:
-                y_edge = float(np.asarray(f_num(edge)))
-            except Exception:
-                continue
-            px.extend([edge, edge, None])
-            py.extend([axis_c, y_edge, None])
-        fig2d.add_trace(
-            go.Scatter(
-                x=px,
-                y=py,
-                mode="lines",
-                line=dict(width=1, color=colors["partition_color"]),
-                name="partitions",
-                hoverinfo="skip",
-            )
-        )
+# GeoGebra-inspired coordinate plane
+all_y = np.concatenate([f_vals, np.array([axis_c])])
+y_min = float(np.min(all_y))
+y_max = float(np.max(all_y))
+y_pad = max(0.35, 0.12 * max(1e-9, y_max - y_min))
+x_pad = max(0.35, 0.06 * abs(b - a))
 
-    fig2d.update_layout(
-        height=520,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis_title="x",
-        yaxis_title="y",
-        hovermode="closest",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    )
-    st.plotly_chart(fig2d, use_container_width=True, config={"displaylogo": False})
+axis_common = dict(
+    showgrid=True,
+    gridcolor=colors["grid"],
+    gridwidth=1,
+    zeroline=True,
+    zerolinecolor="#64748B",
+    zerolinewidth=2,
+    showline=True,
+    linecolor="#CBD5E1",
+    linewidth=1,
+    ticks="outside",
+    tickcolor="#94A3B8",
+    tickfont=dict(size=12, color="#475569"),
+    title_font=dict(size=14, color="#334155"),
+    fixedrange=False,
+)
 
-    st.subheader("2. The Riemann sum")
+fig2d.update_layout(
+    height=610,
+    margin=dict(l=35, r=25, t=50, b=35),
+    paper_bgcolor="#FFFFFF",
+    plot_bgcolor="#FFFFFF",
+    hovermode="closest",
+    dragmode="pan",
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+        bgcolor="rgba(255,255,255,0.78)",
+        bordercolor="#E2E8F0",
+        borderwidth=1,
+        font=dict(size=12),
+    ),
+    xaxis=dict(
+        **axis_common,
+        title="x",
+        range=[a - x_pad, b + x_pad],
+        minor=dict(showgrid=True, gridcolor=colors["minor_grid"], gridwidth=1),
+    ),
+    yaxis=dict(
+        **axis_common,
+        title="y",
+        range=[y_min - y_pad, y_max + y_pad],
+        scaleanchor="x",
+        scaleratio=1,
+        minor=dict(showgrid=True, gridcolor=colors["minor_grid"], gridwidth=1),
+    ),
+    uirevision="2d-region-view",
+)
+
+st.plotly_chart(
+    fig2d,
+    use_container_width=True,
+    config={
+        "displaylogo": False,
+        "scrollZoom": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    },
+)
+st.caption("2D panel: drag to pan · scroll to zoom · double-click to reset the view.")
+
+
+# ============================================================
+# STEP 2 — Math, with built-in Streamlit metrics
+# ============================================================
+st.divider()
+st.header("2. Connect the picture to the disk formula")
+st.markdown(
+    '<div class="step-note">Each disk has thickness Δx and radius |f(x*) − c|.</div>',
+    unsafe_allow_html=True,
+)
+
+m1, m2, m3, m4 = st.columns(4, gap="medium")
+with m1:
+    st.metric("Δx", f"{dx:.5g}")
+with m2:
+    st.metric("Disk approximation", f"{approx_volume:.7g}")
+with m3:
+    st.metric("Actual volume", f"{exact_volume_num:.7g}")
+with m4:
+    st.metric("Relative error", "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%")
+
+formula_col, exact_col = st.columns(2, gap="large")
+with formula_col:
+    st.markdown("**Disk-method Riemann sum**")
     st.latex(r"\Delta x=\frac{b-a}{n}")
     st.latex(r"V_n=\sum_{i=1}^{n}\pi\,[f(x_i^*)-c]^2\,\Delta x")
     st.caption(f"Sampling rule: {sample_rule}. Here n = {n_disks} and Δx = {dx:.6g}.")
 
+with exact_col:
+    st.markdown("**Exact volume**")
     if sym_volume is not None:
-        st.markdown("**Exact integral:**")
         st.latex(r"V=\pi\int_a^b [f(x)-c]^2\,dx=" + sp.latex(sym_volume))
     else:
-        st.markdown("**Actual volume (numeric integral):**")
         st.latex(r"V=\pi\int_a^b [f(x)-c]^2\,dx")
         st.caption(f"Numerical integration error estimate: ±{quad_err:.2g}")
 
-with right_col:
-    st.subheader(f"3. Approximation by {n_disks} disks")
-    fig3d = go.Figure()
 
-    if show_true_surface:
-        Xg, Yg, Zg = exact_surface_mesh(xs, true_radii, axis_y=axis_c, n_theta=max(64, n_theta))
-        fig3d.add_trace(
-            go.Surface(
-                x=Xg,
-                y=Yg,
-                z=Zg,
-                surfacecolor=np.zeros_like(Xg),
-                colorscale=[[0, colors["ghost_color"]], [1, colors["ghost_color"]]],
-                showscale=False,
-                opacity=0.18,
-                hoverinfo="skip",
-                name="True solid",
-            )
+# ============================================================
+# STEP 3 — Large 3D teaching panel
+# ============================================================
+st.divider()
+st.header(f"3. Explore the 3D approximation with {n_disks} disks")
+st.markdown(
+    '<div class="step-note">Drag the solid to rotate it. The small gaps make the individual disks easier to see; they do not change the mathematics.</div>',
+    unsafe_allow_html=True,
+)
+
+fig3d = go.Figure()
+
+if show_true_surface:
+    Xg, Yg, Zg = exact_surface_mesh(
+        xs,
+        true_radii,
+        axis_y=axis_c,
+        n_theta=max(96, n_theta),
+    )
+    fig3d.add_trace(
+        go.Surface(
+            x=Xg,
+            y=Yg,
+            z=Zg,
+            surfacecolor=np.zeros_like(Xg),
+            colorscale=[[0, colors["smooth"]], [1, colors["smooth"]]],
+            showscale=False,
+            opacity=0.16,
+            hoverinfo="skip",
+            name="True solid",
         )
+    )
 
-    visual_gap = (visual_gap_pct / 100.0) * dx
-    disk_centers_vis = []
+visual_gap = (visual_gap_pct / 100.0) * dx
+disk_centers_vis = []
 
-    for i, (xL, xR, R) in enumerate(zip(lefts, rights, radii), start=1):
+# Softer, more natural lighting than the original high-specular red material.
+max_radius = max(float(np.max(radii)), 1e-6)
+scene_span = max(abs(b - a), 2 * max_radius, 1.0)
+light_pos = dict(
+    x=float(a - 1.2 * scene_span),
+    y=float(axis_c - 1.6 * scene_span),
+    z=float(2.3 * scene_span),
+)
+
+for i, (xL, xR, R) in enumerate(zip(lefts, rights, radii), start=1):
+    x0_vis = xL + visual_gap / 2
+    x1_vis = xR - visual_gap / 2
+    if x1_vis <= x0_vis:
+        x0_vis, x1_vis = xL, xR
+
+    Xv, Yv, Zv, I, J, K = cylinder_mesh_x(
+        x0_vis,
+        x1_vis,
+        float(R),
+        axis_y=axis_c,
+        n_theta=n_theta,
+    )
+
+    disk_color = colors["disk_colors"][(i - 1) % len(colors["disk_colors"])]
+
+    fig3d.add_trace(
+        go.Mesh3d(
+            x=Xv,
+            y=Yv,
+            z=Zv,
+            i=I,
+            j=J,
+            k=K,
+            color=disk_color,
+            opacity=1.0,
+            flatshading=False,
+            lighting=dict(
+                ambient=0.52,
+                diffuse=0.78,
+                specular=0.26,
+                roughness=0.58,
+                fresnel=0.035,
+            ),
+            lightposition=light_pos,
+            hoverinfo="skip",
+            showlegend=False,
+            name=f"Disk {i}",
+        )
+    )
+    disk_centers_vis.append((x0_vis + x1_vis) / 2)
+
+if show_rims:
+    rim_x_positions = []
+    rim_radii = []
+    for xL, xR, R in zip(lefts, rights, radii):
         x0_vis = xL + visual_gap / 2
         x1_vis = xR - visual_gap / 2
         if x1_vis <= x0_vis:
             x0_vis, x1_vis = xL, xR
+        rim_x_positions.extend([x0_vis, x1_vis])
+        rim_radii.extend([float(R), float(R)])
 
-        Xv, Yv, Zv, I, J, K = cylinder_mesh_x(
-            x0_vis,
-            x1_vis,
-            float(R),
-            axis_y=axis_c,
-            n_theta=n_theta,
-        )
-
-        fig3d.add_trace(
-            go.Mesh3d(
-                x=Xv,
-                y=Yv,
-                z=Zv,
-                i=I,
-                j=J,
-                k=K,
-                color=colors["disk_color"],
-                opacity=1.0,
-                flatshading=False,
-                lighting=dict(ambient=0.42, diffuse=0.95, specular=1.0, roughness=0.18, fresnel=0.12),
-                lightposition=dict(x=120, y=80, z=130),
-                hoverinfo="skip",
-                showlegend=False,
-                name=f"Disk {i}",
-            )
-        )
-        disk_centers_vis.append((x0_vis + x1_vis) / 2)
-
-    if show_rims:
-        rim_x_positions = []
-        rim_radii = []
-        for xL, xR, R in zip(lefts, rights, radii):
-            x0_vis = xL + visual_gap / 2
-            x1_vis = xR - visual_gap / 2
-            if x1_vis <= x0_vis:
-                x0_vis, x1_vis = xL, xR
-            rim_x_positions.extend([x0_vis, x1_vis])
-            rim_radii.extend([float(R), float(R)])
-
-        RX, RY, RZ = rim_polyline(rim_x_positions, rim_radii, axis_y=axis_c, n_theta=max(48, n_theta))
-        fig3d.add_trace(
-            go.Scatter3d(
-                x=RX,
-                y=RY,
-                z=RZ,
-                mode="lines",
-                line=dict(width=4, color=colors["rim_color"]),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    axis_pad = 0.04 * (b - a)
+    RX, RY, RZ = rim_polyline(
+        rim_x_positions,
+        rim_radii,
+        axis_y=axis_c,
+        n_theta=max(56, n_theta),
+    )
     fig3d.add_trace(
         go.Scatter3d(
-            x=[a - axis_pad, b + axis_pad],
-            y=[axis_c, axis_c],
-            z=[0, 0],
+            x=RX,
+            y=RY,
+            z=RZ,
             mode="lines",
-            line=dict(width=5, color=colors["axis3d"]),
+            line=dict(width=3, color=colors["rim"]),
             hoverinfo="skip",
             showlegend=False,
         )
     )
 
-    hover_text = [
-        f"Disk {i+1}<br>Interval [{lefts[i]:.5g}, {rights[i]:.5g}]"
-        f"<br>x* = {x_star[i]:.5g}"
-        f"<br>R = {radii[i]:.5g}"
-        f"<br>ΔV = {disk_volumes[i]:.5g}"
-        for i in range(n_disks)
-    ]
-    fig3d.add_trace(
-        go.Scatter3d(
-            x=disk_centers_vis,
-            y=np.full(n_disks, axis_c),
-            z=np.zeros(n_disks),
-            mode="markers",
-            marker=dict(size=5, color="rgba(255,255,255,0.001)"),
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-            showlegend=False,
-        )
-    )
-
-    scene_font = dict(color=colors["font_color"])
-    fig3d.update_layout(
-        height=680,
-        margin=dict(l=0, r=0, t=10, b=0),
+# Axis of rotation
+axis_pad = 0.04 * (b - a)
+fig3d.add_trace(
+    go.Scatter3d(
+        x=[a - axis_pad, b + axis_pad],
+        y=[axis_c, axis_c],
+        z=[0, 0],
+        mode="lines",
+        line=dict(width=5, color=colors["axis3d"]),
+        hoverinfo="skip",
         showlegend=False,
-        paper_bgcolor=colors["paper_bg"],
-        font=scene_font,
-        scene=dict(
-            xaxis_title="x",
-            yaxis_title="radial y",
-            zaxis_title="z",
-            aspectmode="data",
-            bgcolor=colors["scene_bg"],
-            camera=dict(eye=dict(x=1.85, y=1.10, z=0.68)),
-            xaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
-            yaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
-            zaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
-        ),
     )
-    st.plotly_chart(fig3d, use_container_width=True, config={"displaylogo": False})
+)
 
-    if visual_gap_pct > 0:
-        st.caption(
-            f"The {visual_gap_pct}% gaps are only for visibility. Each disk still represents the full mathematical thickness Δx = {dx:.6g}."
-        )
-    st.caption(f"Current display style: {style_name}.")
+# Invisible hover targets at disk centers
+hover_text = [
+    f"Disk {i+1}<br>Interval [{lefts[i]:.5g}, {rights[i]:.5g}]"
+    f"<br>x* = {x_star[i]:.5g}"
+    f"<br>R = {radii[i]:.5g}"
+    f"<br>ΔV = {disk_volumes[i]:.5g}"
+    for i in range(n_disks)
+]
+fig3d.add_trace(
+    go.Scatter3d(
+        x=disk_centers_vis,
+        y=np.full(n_disks, axis_c),
+        z=np.zeros(n_disks),
+        mode="markers",
+        marker=dict(size=7, color="rgba(255,255,255,0.001)"),
+        text=hover_text,
+        hovertemplate="%{text}<extra></extra>",
+        showlegend=False,
+    )
+)
+
+# Keep students' chosen camera angle when the slider changes.
+fig3d.update_layout(
+    height=820,
+    margin=dict(l=0, r=0, t=10, b=0),
+    showlegend=False,
+    paper_bgcolor=colors["paper_bg"],
+    font=dict(color=colors["font"]),
+    uirevision="disk-method-3d-camera",
+    scene=dict(
+        xaxis_title="x",
+        yaxis_title="radial direction",
+        zaxis_title="z",
+        aspectmode="data",
+        bgcolor=colors["scene_bg"],
+        camera=dict(eye=dict(x=1.65, y=1.35, z=0.90)),
+        xaxis=dict(
+            showbackground=True,
+            backgroundcolor="#F8FAFC",
+            gridcolor=colors["grid"],
+            zerolinecolor="#94A3B8",
+            color=colors["font"],
+            showspikes=False,
+        ),
+        yaxis=dict(
+            showbackground=True,
+            backgroundcolor="#F8FAFC",
+            gridcolor=colors["grid"],
+            zerolinecolor="#94A3B8",
+            color=colors["font"],
+            showspikes=False,
+        ),
+        zaxis=dict(
+            showbackground=True,
+            backgroundcolor="#F8FAFC",
+            gridcolor=colors["grid"],
+            zerolinecolor="#94A3B8",
+            color=colors["font"],
+            showspikes=False,
+        ),
+    ),
+)
+
+st.plotly_chart(
+    fig3d,
+    use_container_width=True,
+    config={
+        "displaylogo": False,
+        "scrollZoom": True,
+    },
+)
+
+if visual_gap_pct > 0:
+    st.caption(
+        f"The {visual_gap_pct}% gaps are only for visibility. "
+        f"Each disk still represents the full mathematical thickness Δx = {dx:.6g}."
+    )
 
 
 # ============================================================
-# Disk-by-disk data
+# Optional teacher/student data view
 # ============================================================
-st.divider()
-show_table = st.selectbox("Show disk-by-disk table", ["No", "Yes"], index=0)
-if show_table == "Yes":
+with st.expander("Optional: disk-by-disk data"):
     rows = []
     cumulative = 0.0
     for i in range(n_disks):
@@ -588,5 +805,4 @@ if show_table == "Yes":
                 "cumulative volume": cumulative,
             }
         )
-    st.table(rows)
-
+    st.dataframe(rows, use_container_width=True, hide_index=True)
