@@ -245,9 +245,19 @@ with st.sidebar:
             step=1,
             help="Display-only spacing. The volume calculation still uses the full mathematical thickness Δx.",
         )
-        show_rims = st.toggle("Emphasize disk edges", value=True)
-        show_true_surface = st.toggle("Overlay true smooth solid", value=False)
-        show_partitions = st.toggle("Show partition lines in 2D", value=True)
+        # Use selectboxes instead of st.toggle. On the current deployment,
+        # toggle widgets are the three controls producing the browser-side
+        # "Importing a module script failed" messages. Selectboxes already
+        # render correctly in this app, so these are intentionally conservative.
+        show_rims = st.selectbox(
+            "Emphasize disk edges", ["Yes", "No"], index=0, key="show_rims_select"
+        ) == "Yes"
+        show_true_surface = st.selectbox(
+            "Overlay true smooth solid", ["No", "Yes"], index=0, key="show_true_surface_select"
+        ) == "Yes"
+        show_partitions = st.selectbox(
+            "Show partition lines in 2D", ["Yes", "No"], index=0, key="show_partitions_select"
+        ) == "Yes"
         n_theta = st.slider("Disk roundness", 40, 128, 80, 8)
 
 colors = palette_pack(palette_name)
