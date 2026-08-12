@@ -1,17 +1,41 @@
 import numpy as np
 import streamlit as st
 import sympy as sp
-from sympy.parsing.sympy_parser import (
-    parse_expr, standard_transformations, implicit_multiplication_application
-)
 from scipy.integrate import quad
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+)
 import plotly.graph_objects as go
 
-# -----------------------------
-# Helpers
-# -----------------------------
-TRANSFORMS = standard_transformations + (implicit_multiplication_application,)
 
+# ============================================================
+# Streamlit setup
+# ============================================================
+st.set_page_config(
+    page_title="Disk Method Lab",
+    page_icon="🟠",
+    layout="wide",
+)
+
+# A little visual polish without changing Streamlit's overall behavior.
+st.markdown(
+    """
+    <style>
+        .block-container {padding-top: 1.4rem; padding-bottom: 2rem;}
+        [data-testid="stMetricValue"] {font-size: 1.45rem;}
+        .small-note {opacity: 0.72; font-size: 0.9rem;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# Parsing helpers
+# ============================================================
+TRANSFORMS = standard_transformations + (implicit_multiplication_application,)
 SAFE_FUNCS = {
     "pi": sp.pi,
     "e": sp.E,
@@ -27,433 +51,523 @@ SAFE_FUNCS = {
     "sqrt": sp.sqrt,
     "Abs": sp.Abs,
     "abs": sp.Abs,
-    "Max": sp.Max,
-    "Min": sp.Min,
 }
 
-def safe_parse(expr_str: str, varname: str):
-    v = sp.Symbol(varname, real=True)
-    local_dict = {varname: v, **SAFE_FUNCS}
-    expr = parse_expr(expr_str, local_dict=local_dict, transformations=TRANSFORMS, evaluate=True)
-    return v, sp.simplify(expr)
 
-def make_numeric(var, expr):
-    return sp.lambdify(var, expr, modules=["numpy"])
+def safe_parse_x(expr_str: str):
+    x = sp.Symbol("x", real=True)
+    local_dict = {"x": x, **SAFE_FUNCS}
+    expr = parse_expr(
+        expr_str,
+        local_dict=local_dict,
+        transformations=TRANSFORMS,
+        evaluate=True,
+    )
+    return x, sp.simplify(expr)
 
-def radii_from_two_curves_about_line(curve1_vals, curve2_vals, axis_c):
-    r1 = np.abs(curve1_vals - axis_c)
-    r2 = np.abs(curve2_vals - axis_c)
-    R = np.maximum(r1, r2)
-    r = np.minimum(r1, r2)
-    return R, r
 
-# ---- numeric volumes ----
+def as_array(values, template):
+    """Convert scalar lambdify results (e.g. f(x)=3) to arrays."""
+    if np.isscalar(values):
+        return np.full_like(template, float(values), dtype=float)
+    return np.asarray(values, dtype=float)
 
-def vol_washers_dx_about_yc(f_num, g_num, a, b, c):
-    def integrand(x):
-        fx, gx = f_num(x), g_num(x)
-        R, r = radii_from_two_curves_about_line(fx, gx, c)
-        return np.pi * (R**2 - r**2)
-    return quad(integrand, a, b, limit=300)
 
-def vol_washers_dy_about_xc(f_num, g_num, y1, y2, c):
-    def integrand(y):
-        fx, gx = f_num(y), g_num(y)
-        R, r = radii_from_two_curves_about_line(fx, gx, c)
-        return np.pi * (R**2 - r**2)
-    return quad(integrand, y1, y2, limit=300)
+# ============================================================
+# Geometry helpers
+# ============================================================
+def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=48):
+    """Closed cylinder whose axis is parallel to x.
 
-def vol_shells_dx_about_xc(f_num, g_num, a, b, c):
-    def integrand(x):
-        radius = np.abs(x - c)
-        height = np.abs(f_num(x) - g_num(x))
-        return 2*np.pi * radius * height
-    return quad(integrand, a, b, limit=300)
+    Returns vertices and triangular faces for a Plotly Mesh3d trace.
+    The cylinder represents ONE disk in the Riemann-sum approximation.
+    """
+    theta = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
 
-def vol_shells_dy_about_yc(f_num, g_num, y1, y2, c):
-    def integrand(y):
-        radius = np.abs(y - c)
-        height = np.abs(f_num(y) - g_num(y))
-        return 2*np.pi * radius * height
-    return quad(integrand, y1, y2, limit=300)
+    y_ring = axis_y + radius * np.cos(theta)
+    z_ring = radius * np.sin(theta)
 
-# ---- symbolic attempts (best-effort) ----
-# Note: Abs/Max/Min can defeat closed forms; numeric result is the reliable fallback.
+    # Front ring, back ring, then two cap centers.
+    x = np.concatenate([
+        np.full(n_theta, x0),
+        np.full(n_theta, x1),
+        [x0, x1],
+    ])
+    y = np.concatenate([y_ring, y_ring, [axis_y, axis_y]])
+    z = np.concatenate([z_ring, z_ring, [0.0, 0.0]])
 
-def sym_washers_dx_about_yc(x, f, g, a, b, c):
-    integrand = sp.pi * (sp.Max((f-c)**2, (g-c)**2) - sp.Min((f-c)**2, (g-c)**2))
-    try:
-        out = sp.integrate(integrand, (x, a, b))
-        return None if out.has(sp.Integral) else sp.simplify(out)
-    except Exception:
-        return None
+    front_center = 2 * n_theta
+    back_center = 2 * n_theta + 1
 
-def sym_washers_dy_about_xc(y, f, g, y1, y2, c):
-    integrand = sp.pi * (sp.Max((f-c)**2, (g-c)**2) - sp.Min((f-c)**2, (g-c)**2))
-    try:
-        out = sp.integrate(integrand, (y, y1, y2))
-        return None if out.has(sp.Integral) else sp.simplify(out)
-    except Exception:
-        return None
+    I, J, K = [], [], []
 
-def sym_shells_dx_about_xc(x, f, g, a, b, c):
-    integrand = 2*sp.pi * sp.Abs(x-c) * sp.Abs(f-g)
-    try:
-        out = sp.integrate(integrand, (x, a, b))
-        return None if out.has(sp.Integral) else sp.simplify(out)
-    except Exception:
-        return None
+    for k in range(n_theta):
+        kn = (k + 1) % n_theta
 
-def sym_shells_dy_about_yc(y, f, g, y1, y2, c):
-    integrand = 2*sp.pi * sp.Abs(y-c) * sp.Abs(f-g)
-    try:
-        out = sp.integrate(integrand, (y, y1, y2))
-        return None if out.has(sp.Integral) else sp.simplify(out)
-    except Exception:
-        return None
+        # Side wall: two triangles per quad.
+        I.extend([k, k])
+        J.extend([kn, n_theta + kn])
+        K.extend([n_theta + kn, n_theta + k])
 
-# ---- 3D mesh helpers ----
+        # Front cap.
+        I.append(front_center)
+        J.append(kn)
+        K.append(k)
 
-def surface_mesh_from_radii_xparam(xs, R, axis_y, n_theta=160):
-    thetas = np.linspace(0, 2*np.pi, n_theta)
-    X = np.tile(xs, (n_theta, 1))
-    TH = np.tile(thetas.reshape(-1, 1), (1, xs.size))
-    RR = np.tile(R, (n_theta, 1))
+        # Back cap.
+        I.append(back_center)
+        J.append(n_theta + k)
+        K.append(n_theta + kn)
+
+    return x, y, z, I, J, K
+
+
+def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=72):
+    theta = np.linspace(0, 2 * np.pi, n_theta)
+    X = np.tile(xs, (theta.size, 1))
+    TH = np.tile(theta.reshape(-1, 1), (1, xs.size))
+    RR = np.tile(radii, (theta.size, 1))
     Y = axis_y + RR * np.cos(TH)
     Z = RR * np.sin(TH)
     return X, Y, Z
 
-def surface_mesh_from_radii_yparam(ys, R, axis_x, n_theta=160):
-    thetas = np.linspace(0, 2*np.pi, n_theta)
-    Y = np.tile(ys, (n_theta, 1))
-    TH = np.tile(thetas.reshape(-1, 1), (1, ys.size))
-    RR = np.tile(R, (n_theta, 1))
-    X = axis_x + RR * np.cos(TH)
-    Z = RR * np.sin(TH)
+
+def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=60):
+    """One Scatter3d polyline containing many circular rims."""
+    theta = np.linspace(0, 2 * np.pi, n_theta)
+    X, Y, Z = [], [], []
+    for xpos, radius in zip(x_positions, radii):
+        X.extend(np.full(theta.size, xpos).tolist())
+        Y.extend((axis_y + radius * np.cos(theta)).tolist())
+        Z.extend((radius * np.sin(theta)).tolist())
+        X.append(None)
+        Y.append(None)
+        Z.append(None)
     return X, Y, Z
 
-def washer_slice_circles_x(xs_slices, R, r, axis_y):
-    theta = np.linspace(0, 2*np.pi, 160)
-    traces = []
-    for xi, Ro, ri in zip(xs_slices, R, r):
-        y_out = axis_y + Ro*np.cos(theta); z_out = Ro*np.sin(theta); x_out = np.full_like(theta, xi)
-        y_in  = axis_y + ri*np.cos(theta); z_in  = ri*np.sin(theta); x_in  = np.full_like(theta, xi)
-        traces.append(go.Scatter3d(x=x_out, y=y_out, z=z_out, mode="lines", showlegend=False))
-        traces.append(go.Scatter3d(x=x_in,  y=y_in,  z=z_in,  mode="lines", showlegend=False))
-    return traces
 
-def washer_slice_circles_y(ys_slices, R, r, axis_x):
-    theta = np.linspace(0, 2*np.pi, 160)
-    traces = []
-    for yi, Ro, ri in zip(ys_slices, R, r):
-        x_out = axis_x + Ro*np.cos(theta); z_out = Ro*np.sin(theta); y_out = np.full_like(theta, yi)
-        x_in  = axis_x + ri*np.cos(theta); z_in  = ri*np.sin(theta); y_in  = np.full_like(theta, yi)
-        traces.append(go.Scatter3d(x=x_out, y=y_out, z=z_out, mode="lines", showlegend=False))
-        traces.append(go.Scatter3d(x=x_in,  y=y_in,  z=z_in,  mode="lines", showlegend=False))
-    return traces
-
-def shell_preview_circles_about_xc(xs_slices, f_num, g_num, axis_x):
-    theta = np.linspace(0, 2*np.pi, 160)
-    traces = []
-    for xi in xs_slices:
-        radius = float(np.abs(xi-axis_x))
-        midy = float((f_num(xi)+g_num(xi))/2.0)
-        x = axis_x + radius*np.cos(theta)
-        z = radius*np.sin(theta)
-        y = np.full_like(theta, midy)
-        traces.append(go.Scatter3d(x=x, y=y, z=z, mode="lines", showlegend=False))
-    return traces
-
-def shell_preview_circles_about_yc(ys_slices, f_num, g_num, axis_y):
-    theta = np.linspace(0, 2*np.pi, 160)
-    traces = []
-    for yi in ys_slices:
-        radius = float(np.abs(yi-axis_y))
-        midx = float((f_num(yi)+g_num(yi))/2.0)
-        x = np.full_like(theta, midx)
-        z = radius*np.sin(theta)
-        y = axis_y + radius*np.cos(theta)
-        traces.append(go.Scatter3d(x=x, y=y, z=z, mode="lines", showlegend=False))
-    return traces
-
-# -----------------------------
-# UI
-# -----------------------------
-st.set_page_config(page_title="Solids of Revolution: Washers + Shells (2 curves)", layout="wide")
-st.title("Solid of Revolution — Two Curves (Washers + Shell Method)")
-
+# ============================================================
+# Sidebar controls
+# ============================================================
 with st.sidebar:
-    st.header("Choose method")
-    mode = st.selectbox(
-        "Method / Axis",
-        [
-            "Washers: Horizontal axis y=c (dx), enter y=f(x), y=g(x)",
-            "Washers: Vertical axis x=c (dy), enter x=f(y), x=g(y)",
-            "Shells:  Vertical axis x=c (dx), enter y=f(x), y=g(x)",
-            "Shells:  Horizontal axis y=c (dy), enter x=f(y), x=g(y)",
-        ],
+    st.header("Disk Method Controls")
+    st.caption("Revolve the region between y = f(x) and y = c about the horizontal line y = c.")
+
+    f_str = st.text_input("Curve  y = f(x)", value="sqrt(x)")
+
+    st.subheader("Interval")
+    c1, c2 = st.columns(2)
+    with c1:
+        a = st.number_input("a", value=0.0, format="%.4f")
+    with c2:
+        b = st.number_input("b", value=4.0, format="%.4f")
+
+    axis_c = st.number_input("Axis of rotation  y = c", value=0.0, format="%.4f")
+
+    st.divider()
+    st.subheader("Approximation")
+    n_disks = st.slider("Number of disks, n", min_value=2, max_value=60, value=8, step=1)
+    sample_rule = st.radio(
+        "Radius sampled at",
+        ["Midpoint", "Left endpoint", "Right endpoint"],
+        horizontal=False,
     )
 
     st.divider()
-    st.subheader("Functions (2 boundaries)")
-    if mode in (
-        "Washers: Horizontal axis y=c (dx), enter y=f(x), y=g(x)",
-        "Shells:  Vertical axis x=c (dx), enter y=f(x), y=g(x)",
-    ):
-        st.caption("Enter curves as **y = f(x)** and **y = g(x)**")
-        f_str = st.text_input("f(x) =", value="sqrt(x)")
-        g_str = st.text_input("g(x) =", value="0")
-    else:
-        st.caption("Enter boundaries as **x = f(y)** and **x = g(y)**")
-        f_str = st.text_input("f(y) =", value="y**2")
-        g_str = st.text_input("g(y) =", value="0")
+    st.subheader("3D appearance")
+    visual_gap_pct = st.slider(
+        "Visual separation between disks",
+        min_value=0,
+        max_value=20,
+        value=5,
+        step=1,
+        help="This only separates the disks visually. The volume calculation still uses the full Δx.",
+    )
+    n_theta = st.slider("Disk roundness", 24, 96, 48, 8)
+    show_rims = st.checkbox("Emphasize disk edges", value=True)
+    show_true_surface = st.checkbox("Show true solid as a transparent ghost", value=True)
+    show_partitions = st.checkbox("Show partition lines in the 2D region", value=True)
 
-    st.divider()
-    st.subheader("Interval")
-    col1, col2 = st.columns(2)
-    if "dy" in mode:
-        with col1:
-            a = st.number_input("y₁", value=0.0)
-        with col2:
-            b = st.number_input("y₂", value=1.0)
-    else:
-        with col1:
-            a = st.number_input("a", value=0.0)
-        with col2:
-            b = st.number_input("b", value=4.0)
 
-    st.divider()
-    st.subheader("Axis of rotation")
-    if "y=c" in mode:
-        axis_c = st.number_input("Rotate around y = c", value=0.0)
-    else:
-        axis_c = st.number_input("Rotate around x = c", value=0.0)
-
-    st.divider()
-    st.subheader("Plot quality")
-    n_param = st.slider("Samples along interval", 150, 1000, 500, 25)
-    n_theta = st.slider("Surface theta resolution", 80, 320, 180, 10)
-    n_slices = st.slider("Slice preview (count)", 3, 30, 10, 1)
-
-# Validate interval
-if b == a:
-    st.error("Please choose an interval with b ≠ a.")
+# ============================================================
+# Validate and evaluate function
+# ============================================================
+if np.isclose(a, b):
+    st.error("Choose an interval with a ≠ b.")
     st.stop()
+
 if b < a:
     a, b = b, a
-    st.warning("Swapped endpoints so the interval is increasing.")
+    st.info("I swapped the endpoints so that a < b.")
 
-# Parse + numeric funcs
 try:
-    if "enter y=f(x)" in mode:
-        x, f_expr = safe_parse(f_str, "x")
-        _, g_expr = safe_parse(g_str, "x")
-        f_num = make_numeric(x, f_expr)
-        g_num = make_numeric(x, g_expr)
-        var = x
+    x, f_expr = safe_parse_x(f_str)
+    f_num = sp.lambdify(x, f_expr, modules=["numpy"])
+except Exception as exc:
+    st.error(f"I could not parse f(x). Details: {exc}")
+    st.stop()
+
+# Dense grid for curve / true solid.
+xs = np.linspace(a, b, 650)
+try:
+    f_vals = as_array(f_num(xs), xs)
+except Exception as exc:
+    st.error(f"f(x) could not be evaluated on [{a}, {b}]. Details: {exc}")
+    st.stop()
+
+if not np.all(np.isfinite(f_vals)):
+    st.error("f(x) is not finite everywhere on the chosen interval. Adjust f(x), a, or b.")
+    st.stop()
+
+true_radii = np.abs(f_vals - axis_c)
+
+# ============================================================
+# Disk Riemann sum
+# ============================================================
+edges = np.linspace(a, b, n_disks + 1)
+dx = (b - a) / n_disks
+lefts = edges[:-1]
+rights = edges[1:]
+centers = (lefts + rights) / 2
+
+if sample_rule == "Left endpoint":
+    x_star = lefts
+elif sample_rule == "Right endpoint":
+    x_star = rights
+else:
+    x_star = centers
+
+try:
+    f_star = as_array(f_num(x_star), x_star)
+except Exception as exc:
+    st.error(f"The sample points could not be evaluated. Details: {exc}")
+    st.stop()
+
+if not np.all(np.isfinite(f_star)):
+    st.error("At least one disk sample point gives a non-finite value.")
+    st.stop()
+
+radii = np.abs(f_star - axis_c)
+disk_volumes = np.pi * radii**2 * dx
+approx_volume = float(np.sum(disk_volumes))
+
+# Reliable numeric volume of the actual solid.
+def integrand(t):
+    y_val = float(np.asarray(f_num(t)))
+    return np.pi * (y_val - axis_c) ** 2
+
+try:
+    exact_volume_num, quad_err = quad(integrand, a, b, limit=300)
+except Exception as exc:
+    st.error(f"The volume integral failed numerically. Details: {exc}")
+    st.stop()
+
+# Best-effort symbolic exact volume.
+try:
+    sym_volume = sp.integrate(sp.pi * (f_expr - axis_c) ** 2, (x, a, b))
+    if sym_volume.has(sp.Integral):
+        sym_volume = None
     else:
-        y, f_expr = safe_parse(f_str, "y")
-        _, g_expr = safe_parse(g_str, "y")
-        f_num = make_numeric(y, f_expr)
-        g_num = make_numeric(y, g_expr)
-        var = y
-except Exception as e:
-    st.error(f"Could not parse one of the functions. Details: {e}")
-    st.stop()
+        sym_volume = sp.simplify(sym_volume)
+except Exception:
+    sym_volume = None
 
-# Sample + sanity check
-param = np.linspace(a, b, int(n_param))
-try:
-    v1 = f_num(param)
-    v2 = g_num(param)
-    if np.isscalar(v2):
-        v2 = np.full_like(param, float(v2), dtype=float)
+abs_error = abs(approx_volume - exact_volume_num)
+rel_error = abs_error / abs(exact_volume_num) if not np.isclose(exact_volume_num, 0.0) else np.nan
 
-    if not (np.all(np.isfinite(v1)) and np.all(np.isfinite(v2))):
-        st.error("One function produced non-finite values on the interval. Adjust the interval or functions.")
-        st.stop()
-except Exception as e:
-    st.error(f"Functions failed to evaluate numerically. Details: {e}")
-    st.stop()
 
-# Compute volume + symbolic attempt
-if mode.startswith("Washers: Horizontal"):
-    R_arr, r_arr = radii_from_two_curves_about_line(v1, v2, axis_c)
-    vol_num, vol_err = vol_washers_dx_about_yc(f_num, g_num, a, b, axis_c)
-    vol_sym = sym_washers_dx_about_yc(var, f_expr, g_expr, a, b, axis_c)
+# ============================================================
+# Header + metric dashboard
+# ============================================================
+st.title("Disk Method Lab")
+st.markdown(
+    "Move the **number of disks** slider and watch the discrete solid converge toward the true solid of revolution. "
+    "Each gold cylinder is one term of the Riemann sum."
+)
 
-elif mode.startswith("Washers: Vertical"):
-    R_arr, r_arr = radii_from_two_curves_about_line(v1, v2, axis_c)
-    vol_num, vol_err = vol_washers_dy_about_xc(f_num, g_num, a, b, axis_c)
-    vol_sym = sym_washers_dy_about_xc(var, f_expr, g_expr, a, b, axis_c)
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Δx", f"{dx:.5g}")
+m2.metric("Disk approximation", f"{approx_volume:.7g}")
+m3.metric("Actual volume", f"{exact_volume_num:.7g}")
+m4.metric(
+    "Relative error",
+    "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%",
+)
 
-elif mode.startswith("Shells:  Vertical"):
-    vol_num, vol_err = vol_shells_dx_about_xc(f_num, g_num, a, b, axis_c)
-    vol_sym = sym_shells_dx_about_xc(var, f_expr, g_expr, a, b, axis_c)
+# ============================================================
+# Main plots
+# ============================================================
+left_col, right_col = st.columns([0.85, 1.35], gap="large")
 
-else:  # Shells about horizontal axis
-    vol_num, vol_err = vol_shells_dy_about_yc(f_num, g_num, a, b, axis_c)
-    vol_sym = sym_shells_dy_about_yc(var, f_expr, g_expr, a, b, axis_c)
-
-# -----------------------------
-# Plots
-# -----------------------------
-left, right = st.columns([1, 1])
-
-with left:
-    st.subheader("2D view (region + axis)")
+with left_col:
+    st.subheader("1. Region and partition")
     fig2d = go.Figure()
 
-    if "enter y=f(x)" in mode:
-        # y=f(x), y=g(x)
-        fig2d.add_trace(go.Scatter(x=param, y=v1, mode="lines", name="y = f(x)"))
-        fig2d.add_trace(go.Scatter(x=param, y=v2, mode="lines", name="y = g(x)"))
-        if "y=c" in mode:
-            fig2d.add_trace(go.Scatter(x=[a, b], y=[axis_c, axis_c], mode="lines", name="axis y=c"))
-        else:
-            fig2d.add_trace(go.Scatter(x=[axis_c, axis_c], y=[min(v1.min(), v2.min()), max(v1.max(), v2.max())],
-                                       mode="lines", name="axis x=c"))
+    # Filled region between f(x) and the axis of rotation.
+    fig2d.add_trace(
+        go.Scatter(
+            x=np.concatenate([xs, xs[::-1]]),
+            y=np.concatenate([f_vals, np.full_like(xs, axis_c)[::-1]]),
+            fill="toself",
+            mode="lines",
+            line=dict(width=0),
+            fillcolor="rgba(74, 144, 226, 0.18)",
+            name="Region",
+            hoverinfo="skip",
+        )
+    )
+    fig2d.add_trace(
+        go.Scatter(
+            x=xs,
+            y=f_vals,
+            mode="lines",
+            line=dict(width=3, color="#3182CE"),
+            name="y = f(x)",
+        )
+    )
+    fig2d.add_trace(
+        go.Scatter(
+            x=[a, b],
+            y=[axis_c, axis_c],
+            mode="lines",
+            line=dict(width=2, dash="dash", color="#374151"),
+            name="axis y = c",
+        )
+    )
 
-        fig2d.add_trace(go.Scatter(
-            x=np.concatenate([param, param[::-1]]),
-            y=np.concatenate([v1, v2[::-1]]),
-            fill="toself", mode="lines", name="region", opacity=0.18
-        ))
-        fig2d.update_layout(xaxis_title="x", yaxis_title="y", height=430,
-                            margin=dict(l=10, r=10, t=10, b=10))
+    # Sample points show exactly where each disk radius comes from.
+    fig2d.add_trace(
+        go.Scatter(
+            x=x_star,
+            y=f_star,
+            mode="markers",
+            marker=dict(size=7, color="#D97706"),
+            name="radius samples",
+            customdata=np.column_stack([np.arange(1, n_disks + 1), radii]),
+            hovertemplate="Disk %{customdata[0]:.0f}<br>x*=%{x:.5g}<br>R=%{customdata[1]:.5g}<extra></extra>",
+        )
+    )
+
+    if show_partitions:
+        px, py = [], []
+        # Draw each partition line from the axis to the curve at that x.
+        for edge in edges:
+            try:
+                y_edge = float(np.asarray(f_num(edge)))
+            except Exception:
+                continue
+            px.extend([edge, edge, None])
+            py.extend([axis_c, y_edge, None])
+        fig2d.add_trace(
+            go.Scatter(
+                x=px,
+                y=py,
+                mode="lines",
+                line=dict(width=1, color="rgba(217,119,6,0.55)"),
+                name="partitions",
+                hoverinfo="skip",
+            )
+        )
+
+    fig2d.update_layout(
+        height=520,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis_title="x",
+        yaxis_title="y",
+        hovermode="closest",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    st.plotly_chart(fig2d, use_container_width=True, config={"displaylogo": False})
+
+    st.subheader("2. The Riemann sum")
+    st.latex(r"\Delta x=\frac{b-a}{n}")
+    st.latex(r"V_n=\sum_{i=1}^{n}\pi\,[f(x_i^*)-c]^2\,\Delta x")
+    st.caption(f"Sampling rule: {sample_rule}.  Here n = {n_disks} and Δx = {dx:.6g}.")
+
+    if sym_volume is not None:
+        st.markdown("**Exact integral:**")
+        st.latex(r"V=\pi\int_a^b [f(x)-c]^2\,dx=" + sp.latex(sym_volume))
     else:
-        # x=f(y), x=g(y)
-        fig2d.add_trace(go.Scatter(x=v1, y=param, mode="lines", name="x = f(y)"))
-        fig2d.add_trace(go.Scatter(x=v2, y=param, mode="lines", name="x = g(y)"))
-        if "y=c" in mode:
-            fig2d.add_trace(go.Scatter(x=[min(v1.min(), v2.min()), max(v1.max(), v2.max())],
-                                       y=[axis_c, axis_c], mode="lines", name="axis y=c"))
-        else:
-            fig2d.add_trace(go.Scatter(x=[axis_c, axis_c], y=[a, b], mode="lines", name="axis x=c"))
+        st.markdown("**Actual volume (numeric integral):**")
+        st.latex(r"V=\pi\int_a^b [f(x)-c]^2\,dx")
+        st.caption(f"Numerical integration error estimate: ±{quad_err:.2g}")
 
-        fig2d.add_trace(go.Scatter(
-            x=np.concatenate([v1, v2[::-1]]),
-            y=np.concatenate([param, param[::-1]]),
-            fill="toself", mode="lines", name="region", opacity=0.18
-        ))
-        fig2d.update_layout(xaxis_title="x", yaxis_title="y", height=430,
-                            margin=dict(l=10, r=10, t=10, b=10))
-
-    st.plotly_chart(fig2d, use_container_width=True)
-
-    st.subheader("Volume formula")
-    if mode.startswith("Washers: Horizontal"):
-        st.latex(r"V=\pi\int_a^b\left(R(x)^2-r(x)^2\right)\,dx")
-    elif mode.startswith("Washers: Vertical"):
-        st.latex(r"V=\pi\int_{y_1}^{y_2}\left(R(y)^2-r(y)^2\right)\,dy")
-    elif mode.startswith("Shells:  Vertical"):
-        st.latex(r"V=2\pi\int_a^b |x-c|\;|f(x)-g(x)|\,dx")
-    else:
-        st.latex(r"V=2\pi\int_{y_1}^{y_2} |y-c|\;|f(y)-g(y)|\,dy")
-
-    st.write(f"**Numeric volume:** {vol_num:.10g}")
-    st.caption(f"Estimated numeric integration error: ±{vol_err:.2g}")
-    if vol_sym is not None:
-        st.write("**Symbolic (exact) attempt:**")
-        st.latex(sp.latex(vol_sym))
-    else:
-        st.caption("Symbolic integration wasn’t available here (numeric result above is reliable).")
-
-with right:
-    st.subheader("3D visualization (interactive)")
+with right_col:
+    st.subheader(f"3. Approximation by {n_disks} disks")
     fig3d = go.Figure()
 
-    if mode.startswith("Washers: Horizontal"):
-        R_arr, r_arr = radii_from_two_curves_about_line(v1, v2, axis_c)
-        Xo, Yo, Zo = surface_mesh_from_radii_xparam(param, R_arr, axis_c, n_theta=int(n_theta))
-        Xi, Yi, Zi = surface_mesh_from_radii_xparam(param, r_arr, axis_c, n_theta=int(n_theta))
-        fig3d.add_trace(go.Surface(x=Xo, y=Yo, z=Zo, showscale=False, opacity=0.85))
-        fig3d.add_trace(go.Surface(x=Xi, y=Yi, z=Zi, showscale=False, opacity=0.55))
-        fig3d.add_trace(go.Scatter3d(x=[a, b], y=[axis_c, axis_c], z=[0, 0], mode="lines", showlegend=False))
+    # Optional ghost surface: the smooth solid students are approximating.
+    if show_true_surface:
+        Xg, Yg, Zg = exact_surface_mesh(xs, true_radii, axis_y=axis_c, n_theta=max(48, n_theta))
+        fig3d.add_trace(
+            go.Surface(
+                x=Xg,
+                y=Yg,
+                z=Zg,
+                surfacecolor=np.zeros_like(Xg),
+                colorscale=[[0, "#60A5FA"], [1, "#60A5FA"]],
+                showscale=False,
+                opacity=0.12,
+                hoverinfo="skip",
+                name="True solid",
+            )
+        )
 
-        xs_s = np.linspace(a, b, int(n_slices))
-        fx_s, gx_s = f_num(xs_s), g_num(xs_s)
-        R_s, r_s = radii_from_two_curves_about_line(fx_s, gx_s, axis_c)
-        for tr in washer_slice_circles_x(xs_s, R_s, r_s, axis_c):
-            fig3d.add_trace(tr)
+    # Render each Riemann-sum disk as an ACTUAL finite-thickness cylinder.
+    visual_gap = (visual_gap_pct / 100.0) * dx
+    disk_centers_vis = []
+    disk_radii_vis = []
 
-    elif mode.startswith("Washers: Vertical"):
-        R_arr, r_arr = radii_from_two_curves_about_line(v1, v2, axis_c)
-        Xo, Yo, Zo = surface_mesh_from_radii_yparam(param, R_arr, axis_c, n_theta=int(n_theta))
-        Xi, Yi, Zi = surface_mesh_from_radii_yparam(param, r_arr, axis_c, n_theta=int(n_theta))
-        fig3d.add_trace(go.Surface(x=Xo, y=Yo, z=Zo, showscale=False, opacity=0.85))
-        fig3d.add_trace(go.Surface(x=Xi, y=Yi, z=Zi, showscale=False, opacity=0.55))
-        fig3d.add_trace(go.Scatter3d(x=[axis_c, axis_c], y=[a, b], z=[0, 0], mode="lines", showlegend=False))
+    for i, (xL, xR, R) in enumerate(zip(lefts, rights, radii), start=1):
+        # Gaps are purely visual; the Riemann sum still uses full dx.
+        x0_vis = xL + visual_gap / 2
+        x1_vis = xR - visual_gap / 2
+        if x1_vis <= x0_vis:
+            x0_vis, x1_vis = xL, xR
 
-        ys_s = np.linspace(a, b, int(n_slices))
-        fx_s, gx_s = f_num(ys_s), g_num(ys_s)
-        R_s, r_s = radii_from_two_curves_about_line(fx_s, gx_s, axis_c)
-        for tr in washer_slice_circles_y(ys_s, R_s, r_s, axis_c):
-            fig3d.add_trace(tr)
+        Xv, Yv, Zv, I, J, K = cylinder_mesh_x(
+            x0_vis,
+            x1_vis,
+            float(R),
+            axis_y=axis_c,
+            n_theta=n_theta,
+        )
 
-    elif mode.startswith("Shells:  Vertical"):
-        # revolve top/bottom surfaces around x=c for intuition
-        thetas = np.linspace(0, 2*np.pi, int(n_theta))
-        TH = np.tile(thetas.reshape(-1, 1), (1, param.size))
-        RAD = np.abs(param - axis_c)
-        RAD2D = np.tile(RAD, (thetas.size, 1))
-        Xbase = axis_c + RAD2D*np.cos(TH)
-        Zbase = RAD2D*np.sin(TH)
-        Ytop = np.tile(v1, (thetas.size, 1))
-        Ybot = np.tile(v2, (thetas.size, 1))
+        fig3d.add_trace(
+            go.Mesh3d(
+                x=Xv,
+                y=Yv,
+                z=Zv,
+                i=I,
+                j=J,
+                k=K,
+                color="#D9A441",
+                opacity=0.96,
+                flatshading=True,
+                lighting=dict(ambient=0.5, diffuse=0.8, specular=0.45, roughness=0.5, fresnel=0.08),
+                lightposition=dict(x=80, y=120, z=100),
+                hoverinfo="skip",
+                showlegend=False,
+                name=f"Disk {i}",
+            )
+        )
+        disk_centers_vis.append((x0_vis + x1_vis) / 2)
+        disk_radii_vis.append(float(R))
 
-        fig3d.add_trace(go.Surface(x=Xbase, y=Ytop, z=Zbase, showscale=False, opacity=0.75))
-        fig3d.add_trace(go.Surface(x=Xbase, y=Ybot, z=Zbase, showscale=False, opacity=0.55))
-        fig3d.add_trace(go.Scatter3d(x=[axis_c, axis_c],
-                                     y=[min(v1.min(), v2.min()), max(v1.max(), v2.max())],
-                                     z=[0, 0], mode="lines", showlegend=False))
+    # One trace for crisp circular edges, instead of 2*n separate traces.
+    if show_rims:
+        rim_x_positions = []
+        rim_radii = []
+        for xL, xR, R in zip(lefts, rights, radii):
+            x0_vis = xL + visual_gap / 2
+            x1_vis = xR - visual_gap / 2
+            if x1_vis <= x0_vis:
+                x0_vis, x1_vis = xL, xR
+            rim_x_positions.extend([x0_vis, x1_vis])
+            rim_radii.extend([float(R), float(R)])
 
-        xs_s = np.linspace(a, b, int(n_slices))
-        for tr in shell_preview_circles_about_xc(xs_s, f_num, g_num, axis_c):
-            fig3d.add_trace(tr)
+        RX, RY, RZ = rim_polyline(rim_x_positions, rim_radii, axis_y=axis_c, n_theta=max(36, n_theta))
+        fig3d.add_trace(
+            go.Scatter3d(
+                x=RX,
+                y=RY,
+                z=RZ,
+                mode="lines",
+                line=dict(width=2, color="rgba(91, 65, 24, 0.72)"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
 
-    else:
-        # Shells about horizontal axis y=c using dy, with x=f(y), x=g(y)
-        # Visualize by revolving the "left/right" boundaries around y=c:
-        thetas = np.linspace(0, 2*np.pi, int(n_theta))
-        TH = np.tile(thetas.reshape(-1, 1), (1, param.size))
-        RAD = np.abs(param - axis_c)          # radius in y
-        RAD2D = np.tile(RAD, (thetas.size, 1))
-
-        # two surfaces: x=f(y) and x=g(y), rotated around y=c
-        X1 = np.tile(v1, (thetas.size, 1))
-        X2 = np.tile(v2, (thetas.size, 1))
-        Ybase = axis_c + RAD2D*np.cos(TH)
-        Zbase = RAD2D*np.sin(TH)
-
-        fig3d.add_trace(go.Surface(x=X1, y=Ybase, z=Zbase, showscale=False, opacity=0.75))
-        fig3d.add_trace(go.Surface(x=X2, y=Ybase, z=Zbase, showscale=False, opacity=0.55))
-
-        fig3d.add_trace(go.Scatter3d(
-            x=[min(v1.min(), v2.min()), max(v1.max(), v2.max())],
-            y=[axis_c, axis_c], z=[0, 0],
-            mode="lines", showlegend=False
-        ))
-
-        ys_s = np.linspace(a, b, int(n_slices))
-        for tr in shell_preview_circles_about_yc(ys_s, f_num, g_num, axis_c):
-            fig3d.add_trace(tr)
-
-    fig3d.update_layout(
-        scene=dict(xaxis_title="x", yaxis_title="y", zaxis_title="z", aspectmode="data"),
-        height=560,
-        margin=dict(l=0, r=0, t=10, b=0),
-        showlegend=False
+    # Axis of revolution.
+    max_r = float(max(np.max(true_radii), np.max(radii), 1e-9))
+    axis_pad = 0.04 * (b - a)
+    fig3d.add_trace(
+        go.Scatter3d(
+            x=[a - axis_pad, b + axis_pad],
+            y=[axis_c, axis_c],
+            z=[0, 0],
+            mode="lines",
+            line=dict(width=4, color="#111827"),
+            hoverinfo="skip",
+            showlegend=False,
+        )
     )
-    st.plotly_chart(fig3d, use_container_width=True)
 
+    # Invisible-ish center markers with useful hover data for each disk.
+    hover_text = [
+        f"Disk {i+1}<br>Interval [{lefts[i]:.5g}, {rights[i]:.5g}]"
+        f"<br>x* = {x_star[i]:.5g}"
+        f"<br>R = {radii[i]:.5g}"
+        f"<br>ΔV = {disk_volumes[i]:.5g}"
+        for i in range(n_disks)
+    ]
+    fig3d.add_trace(
+        go.Scatter3d(
+            x=disk_centers_vis,
+            y=np.full(n_disks, axis_c),
+            z=np.zeros(n_disks),
+            mode="markers",
+            marker=dict(size=5, color="rgba(0,0,0,0.01)"),
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+            showlegend=False,
+        )
+    )
+
+    # A camera angle intentionally similar to textbook "stacked disks" figures.
+    fig3d.update_layout(
+        height=680,
+        margin=dict(l=0, r=0, t=10, b=0),
+        showlegend=False,
+        scene=dict(
+            xaxis_title="x",
+            yaxis_title="radial y",
+            zaxis_title="z",
+            aspectmode="data",
+            camera=dict(eye=dict(x=1.65, y=1.35, z=0.82)),
+            xaxis=dict(showbackground=False),
+            yaxis=dict(showbackground=False),
+            zaxis=dict(showbackground=False),
+        ),
+    )
+    st.plotly_chart(fig3d, use_container_width=True, config={"displaylogo": False})
+
+    if visual_gap_pct > 0:
+        st.caption(
+            f"The {visual_gap_pct}% gaps are only for visibility. Each disk still represents the full mathematical thickness Δx = {dx:.6g}."
+        )
+    if show_true_surface:
+        st.caption("The transparent blue surface is the true solid; the gold cylinders are the disk approximation.")
+
+
+# ============================================================
+# Disk-by-disk data
+# ============================================================
 st.divider()
+with st.expander("Inspect every disk", expanded=False):
+    rows = []
+    cumulative = 0.0
+    for i in range(n_disks):
+        cumulative += disk_volumes[i]
+        rows.append(
+            {
+                "Disk": i + 1,
+                "left": lefts[i],
+                "right": rights[i],
+                "x*": x_star[i],
+                "radius R": radii[i],
+                "πR²Δx": disk_volumes[i],
+                "cumulative volume": cumulative,
+            }
+        )
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
 st.markdown(
     """
-### Notes
-- **Shells about x=c (dx)** expects **y=f(x), y=g(x)**.
-- **Shells about y=c (dy)** expects **x=f(y), x=g(y)**.
-- The 3D view for shells is an *intuition visualization* (it shows rotated boundary surfaces + shell preview circles).
-  The **volume computation is the main “truth”**.
-"""
+    <div class="small-note">
+    Teaching idea: start with n = 4 or 6 and a visible gap, then increase n while students watch the stair-stepped cylinder model converge to the transparent true solid.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
