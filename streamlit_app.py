@@ -15,17 +15,34 @@ import plotly.graph_objects as go
 # ============================================================
 st.set_page_config(
     page_title="Disk Method Lab",
-    page_icon="🟠",
+    page_icon="🔴",
     layout="wide",
 )
 
-# A little visual polish without changing Streamlit's overall behavior.
 st.markdown(
     """
     <style>
-        .block-container {padding-top: 1.4rem; padding-bottom: 2rem;}
-        [data-testid="stMetricValue"] {font-size: 1.45rem;}
-        .small-note {opacity: 0.72; font-size: 0.9rem;}
+        .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
+        .small-note {opacity: 0.78; font-size: 0.92rem;}
+        .metric-card {
+            border: 1px solid rgba(120,120,120,0.18);
+            border-radius: 14px;
+            padding: 0.85rem 1rem;
+            background: linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(244,244,244,1) 100%);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            min-height: 90px;
+        }
+        .metric-label {
+            font-size: 0.92rem;
+            color: #5B6470;
+            margin-bottom: 0.2rem;
+        }
+        .metric-value {
+            font-size: 1.55rem;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1.2;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -67,7 +84,6 @@ def safe_parse_x(expr_str: str):
 
 
 def as_array(values, template):
-    """Convert scalar lambdify results (e.g. f(x)=3) to arrays."""
     if np.isscalar(values):
         return np.full_like(template, float(values), dtype=float)
     return np.asarray(values, dtype=float)
@@ -76,18 +92,13 @@ def as_array(values, template):
 # ============================================================
 # Geometry helpers
 # ============================================================
-def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=48):
-    """Closed cylinder whose axis is parallel to x.
-
-    Returns vertices and triangular faces for a Plotly Mesh3d trace.
-    The cylinder represents ONE disk in the Riemann-sum approximation.
-    """
+def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=56):
+    """Closed cylinder for one disk, axis parallel to x."""
     theta = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
 
     y_ring = axis_y + radius * np.cos(theta)
     z_ring = radius * np.sin(theta)
 
-    # Front ring, back ring, then two cap centers.
     x = np.concatenate([
         np.full(n_theta, x0),
         np.full(n_theta, x1),
@@ -104,17 +115,17 @@ def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=48):
     for k in range(n_theta):
         kn = (k + 1) % n_theta
 
-        # Side wall: two triangles per quad.
+        # side wall
         I.extend([k, k])
         J.extend([kn, n_theta + kn])
         K.extend([n_theta + kn, n_theta + k])
 
-        # Front cap.
+        # front cap
         I.append(front_center)
         J.append(kn)
         K.append(k)
 
-        # Back cap.
+        # back cap
         I.append(back_center)
         J.append(n_theta + k)
         K.append(n_theta + kn)
@@ -122,7 +133,7 @@ def cylinder_mesh_x(x0, x1, radius, axis_y=0.0, n_theta=48):
     return x, y, z, I, J, K
 
 
-def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=72):
+def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=80):
     theta = np.linspace(0, 2 * np.pi, n_theta)
     X = np.tile(xs, (theta.size, 1))
     TH = np.tile(theta.reshape(-1, 1), (1, xs.size))
@@ -132,8 +143,7 @@ def exact_surface_mesh(xs, radii, axis_y=0.0, n_theta=72):
     return X, Y, Z
 
 
-def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=60):
-    """One Scatter3d polyline containing many circular rims."""
+def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=72):
     theta = np.linspace(0, 2 * np.pi, n_theta)
     X, Y, Z = [], [], []
     for xpos, radius in zip(x_positions, radii):
@@ -146,12 +156,46 @@ def rim_polyline(x_positions, radii, axis_y=0.0, n_theta=60):
     return X, Y, Z
 
 
+def style_pack(style_name: str):
+    if style_name == "Bold red (recommended)":
+        return {
+            "disk_color": "#D10000",
+            "rim_color": "rgba(80,0,0,0.95)",
+            "curve_color": "#111111",
+            "region_fill": "rgba(230, 35, 35, 0.24)",
+            "sample_color": "#00C853",
+            "partition_color": "rgba(220, 40, 40, 0.48)",
+            "axis2d": "#E31B1B",
+            "axis3d": "#CFCFCF",
+            "ghost_color": "#F8B4B4",
+            "scene_bg": "#080808",
+            "paper_bg": "#080808",
+            "font_color": "#F3F4F6",
+            "grid_color": "rgba(255,255,255,0.12)",
+        }
+    return {
+        "disk_color": "#D9A441",
+        "rim_color": "rgba(91,65,24,0.88)",
+        "curve_color": "#2563EB",
+        "region_fill": "rgba(74, 144, 226, 0.18)",
+        "sample_color": "#D97706",
+        "partition_color": "rgba(217,119,6,0.55)",
+        "axis2d": "#374151",
+        "axis3d": "#111827",
+        "ghost_color": "#60A5FA",
+        "scene_bg": "#FFFFFF",
+        "paper_bg": "#FFFFFF",
+        "font_color": "#111827",
+        "grid_color": "rgba(0,0,0,0.10)",
+    }
+
+
 # ============================================================
 # Sidebar controls
 # ============================================================
 with st.sidebar:
     st.header("Disk Method Controls")
-    st.caption("Revolve the region between y = f(x) and y = c about the horizontal line y = c.")
+    st.caption("This version only does the disk method for a region between y = f(x) and y = c, revolved around the horizontal line y = c.")
 
     f_str = st.text_input("Curve  y = f(x)", value="sqrt(x)")
 
@@ -167,26 +211,33 @@ with st.sidebar:
     st.divider()
     st.subheader("Approximation")
     n_disks = st.slider("Number of disks, n", min_value=2, max_value=60, value=8, step=1)
-    sample_rule = st.radio(
+    sample_rule = st.selectbox(
         "Radius sampled at",
         ["Midpoint", "Left endpoint", "Right endpoint"],
-        horizontal=False,
+        index=0,
     )
 
     st.divider()
     st.subheader("3D appearance")
+    style_name = st.selectbox(
+        "Color/style",
+        ["Bold red (recommended)", "Textbook gold"],
+        index=0,
+    )
     visual_gap_pct = st.slider(
         "Visual separation between disks",
         min_value=0,
         max_value=20,
-        value=5,
+        value=8,
         step=1,
         help="This only separates the disks visually. The volume calculation still uses the full Δx.",
     )
-    n_theta = st.slider("Disk roundness", 24, 96, 48, 8)
-    show_rims = st.checkbox("Emphasize disk edges", value=True)
-    show_true_surface = st.checkbox("Show true solid as a transparent ghost", value=True)
-    show_partitions = st.checkbox("Show partition lines in the 2D region", value=True)
+    n_theta = st.slider("Disk roundness", 32, 120, 72, 8)
+    show_rims = st.selectbox("Emphasize disk edges", ["Yes", "No"], index=0) == "Yes"
+    show_true_surface = st.selectbox("Show true smooth solid", ["No", "Yes"], index=0) == "Yes"
+    show_partitions = st.selectbox("Show partition lines in 2D", ["Yes", "No"], index=0) == "Yes"
+
+colors = style_pack(style_name)
 
 
 # ============================================================
@@ -207,8 +258,7 @@ except Exception as exc:
     st.error(f"I could not parse f(x). Details: {exc}")
     st.stop()
 
-# Dense grid for curve / true solid.
-xs = np.linspace(a, b, 650)
+xs = np.linspace(a, b, 700)
 try:
     f_vals = as_array(f_num(xs), xs)
 except Exception as exc:
@@ -220,6 +270,7 @@ if not np.all(np.isfinite(f_vals)):
     st.stop()
 
 true_radii = np.abs(f_vals - axis_c)
+
 
 # ============================================================
 # Disk Riemann sum
@@ -251,10 +302,11 @@ radii = np.abs(f_star - axis_c)
 disk_volumes = np.pi * radii**2 * dx
 approx_volume = float(np.sum(disk_volumes))
 
-# Reliable numeric volume of the actual solid.
+
 def integrand(t):
     y_val = float(np.asarray(f_num(t)))
     return np.pi * (y_val - axis_c) ** 2
+
 
 try:
     exact_volume_num, quad_err = quad(integrand, a, b, limit=300)
@@ -262,7 +314,6 @@ except Exception as exc:
     st.error(f"The volume integral failed numerically. Details: {exc}")
     st.stop()
 
-# Best-effort symbolic exact volume.
 try:
     sym_volume = sp.integrate(sp.pi * (f_expr - axis_c) ** 2, (x, a, b))
     if sym_volume.has(sp.Integral):
@@ -277,22 +328,37 @@ rel_error = abs_error / abs(exact_volume_num) if not np.isclose(exact_volume_num
 
 
 # ============================================================
-# Header + metric dashboard
+# Header
 # ============================================================
 st.title("Disk Method Lab")
 st.markdown(
     "Move the **number of disks** slider and watch the discrete solid converge toward the true solid of revolution. "
-    "Each gold cylinder is one term of the Riemann sum."
+    "Each cylinder is one term of the disk-method Riemann sum."
 )
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Δx", f"{dx:.5g}")
-m2.metric("Disk approximation", f"{approx_volume:.7g}")
-m3.metric("Actual volume", f"{exact_volume_num:.7g}")
-m4.metric(
-    "Relative error",
-    "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%",
-)
+
+def metric_card(label, value):
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+mc1, mc2, mc3, mc4 = st.columns(4)
+with mc1:
+    metric_card("Δx", f"{dx:.5g}")
+with mc2:
+    metric_card("Disk approximation", f"{approx_volume:.7g}")
+with mc3:
+    metric_card("Actual volume", f"{exact_volume_num:.7g}")
+with mc4:
+    metric_card("Relative error", "—" if np.isnan(rel_error) else f"{100 * rel_error:.4g}%")
+
 
 # ============================================================
 # Main plots
@@ -303,7 +369,6 @@ with left_col:
     st.subheader("1. Region and partition")
     fig2d = go.Figure()
 
-    # Filled region between f(x) and the axis of rotation.
     fig2d.add_trace(
         go.Scatter(
             x=np.concatenate([xs, xs[::-1]]),
@@ -311,7 +376,7 @@ with left_col:
             fill="toself",
             mode="lines",
             line=dict(width=0),
-            fillcolor="rgba(74, 144, 226, 0.18)",
+            fillcolor=colors["region_fill"],
             name="Region",
             hoverinfo="skip",
         )
@@ -321,7 +386,7 @@ with left_col:
             x=xs,
             y=f_vals,
             mode="lines",
-            line=dict(width=3, color="#3182CE"),
+            line=dict(width=3, color=colors["curve_color"]),
             name="y = f(x)",
         )
     )
@@ -330,27 +395,24 @@ with left_col:
             x=[a, b],
             y=[axis_c, axis_c],
             mode="lines",
-            line=dict(width=2, dash="dash", color="#374151"),
+            line=dict(width=3, color=colors["axis2d"]),
             name="axis y = c",
         )
     )
-
-    # Sample points show exactly where each disk radius comes from.
     fig2d.add_trace(
         go.Scatter(
             x=x_star,
             y=f_star,
             mode="markers",
-            marker=dict(size=7, color="#D97706"),
+            marker=dict(size=8, color=colors["sample_color"], line=dict(width=1, color="#111111")),
             name="radius samples",
             customdata=np.column_stack([np.arange(1, n_disks + 1), radii]),
-            hovertemplate="Disk %{customdata[0]:.0f}<br>x*=%{x:.5g}<br>R=%{customdata[1]:.5g}<extra></extra>",
+            hovertemplate="Disk %{customdata[0]:.0f}<br>x* = %{x:.5g}<br>R = %{customdata[1]:.5g}<extra></extra>",
         )
     )
 
     if show_partitions:
         px, py = [], []
-        # Draw each partition line from the axis to the curve at that x.
         for edge in edges:
             try:
                 y_edge = float(np.asarray(f_num(edge)))
@@ -363,7 +425,7 @@ with left_col:
                 x=px,
                 y=py,
                 mode="lines",
-                line=dict(width=1, color="rgba(217,119,6,0.55)"),
+                line=dict(width=1, color=colors["partition_color"]),
                 name="partitions",
                 hoverinfo="skip",
             )
@@ -382,7 +444,7 @@ with left_col:
     st.subheader("2. The Riemann sum")
     st.latex(r"\Delta x=\frac{b-a}{n}")
     st.latex(r"V_n=\sum_{i=1}^{n}\pi\,[f(x_i^*)-c]^2\,\Delta x")
-    st.caption(f"Sampling rule: {sample_rule}.  Here n = {n_disks} and Δx = {dx:.6g}.")
+    st.caption(f"Sampling rule: {sample_rule}. Here n = {n_disks} and Δx = {dx:.6g}.")
 
     if sym_volume is not None:
         st.markdown("**Exact integral:**")
@@ -396,30 +458,26 @@ with right_col:
     st.subheader(f"3. Approximation by {n_disks} disks")
     fig3d = go.Figure()
 
-    # Optional ghost surface: the smooth solid students are approximating.
     if show_true_surface:
-        Xg, Yg, Zg = exact_surface_mesh(xs, true_radii, axis_y=axis_c, n_theta=max(48, n_theta))
+        Xg, Yg, Zg = exact_surface_mesh(xs, true_radii, axis_y=axis_c, n_theta=max(64, n_theta))
         fig3d.add_trace(
             go.Surface(
                 x=Xg,
                 y=Yg,
                 z=Zg,
                 surfacecolor=np.zeros_like(Xg),
-                colorscale=[[0, "#60A5FA"], [1, "#60A5FA"]],
+                colorscale=[[0, colors["ghost_color"]], [1, colors["ghost_color"]]],
                 showscale=False,
-                opacity=0.12,
+                opacity=0.18,
                 hoverinfo="skip",
                 name="True solid",
             )
         )
 
-    # Render each Riemann-sum disk as an ACTUAL finite-thickness cylinder.
     visual_gap = (visual_gap_pct / 100.0) * dx
     disk_centers_vis = []
-    disk_radii_vis = []
 
     for i, (xL, xR, R) in enumerate(zip(lefts, rights, radii), start=1):
-        # Gaps are purely visual; the Riemann sum still uses full dx.
         x0_vis = xL + visual_gap / 2
         x1_vis = xR - visual_gap / 2
         if x1_vis <= x0_vis:
@@ -441,20 +499,18 @@ with right_col:
                 i=I,
                 j=J,
                 k=K,
-                color="#D9A441",
-                opacity=0.96,
-                flatshading=True,
-                lighting=dict(ambient=0.5, diffuse=0.8, specular=0.45, roughness=0.5, fresnel=0.08),
-                lightposition=dict(x=80, y=120, z=100),
+                color=colors["disk_color"],
+                opacity=1.0,
+                flatshading=False,
+                lighting=dict(ambient=0.42, diffuse=0.95, specular=1.0, roughness=0.18, fresnel=0.12),
+                lightposition=dict(x=120, y=80, z=130),
                 hoverinfo="skip",
                 showlegend=False,
                 name=f"Disk {i}",
             )
         )
         disk_centers_vis.append((x0_vis + x1_vis) / 2)
-        disk_radii_vis.append(float(R))
 
-    # One trace for crisp circular edges, instead of 2*n separate traces.
     if show_rims:
         rim_x_positions = []
         rim_radii = []
@@ -466,21 +522,19 @@ with right_col:
             rim_x_positions.extend([x0_vis, x1_vis])
             rim_radii.extend([float(R), float(R)])
 
-        RX, RY, RZ = rim_polyline(rim_x_positions, rim_radii, axis_y=axis_c, n_theta=max(36, n_theta))
+        RX, RY, RZ = rim_polyline(rim_x_positions, rim_radii, axis_y=axis_c, n_theta=max(48, n_theta))
         fig3d.add_trace(
             go.Scatter3d(
                 x=RX,
                 y=RY,
                 z=RZ,
                 mode="lines",
-                line=dict(width=2, color="rgba(91, 65, 24, 0.72)"),
+                line=dict(width=4, color=colors["rim_color"]),
                 hoverinfo="skip",
                 showlegend=False,
             )
         )
 
-    # Axis of revolution.
-    max_r = float(max(np.max(true_radii), np.max(radii), 1e-9))
     axis_pad = 0.04 * (b - a)
     fig3d.add_trace(
         go.Scatter3d(
@@ -488,13 +542,12 @@ with right_col:
             y=[axis_c, axis_c],
             z=[0, 0],
             mode="lines",
-            line=dict(width=4, color="#111827"),
+            line=dict(width=5, color=colors["axis3d"]),
             hoverinfo="skip",
             showlegend=False,
         )
     )
 
-    # Invisible-ish center markers with useful hover data for each disk.
     hover_text = [
         f"Disk {i+1}<br>Interval [{lefts[i]:.5g}, {rights[i]:.5g}]"
         f"<br>x* = {x_star[i]:.5g}"
@@ -508,27 +561,30 @@ with right_col:
             y=np.full(n_disks, axis_c),
             z=np.zeros(n_disks),
             mode="markers",
-            marker=dict(size=5, color="rgba(0,0,0,0.01)"),
+            marker=dict(size=5, color="rgba(255,255,255,0.001)"),
             text=hover_text,
             hovertemplate="%{text}<extra></extra>",
             showlegend=False,
         )
     )
 
-    # A camera angle intentionally similar to textbook "stacked disks" figures.
+    scene_font = dict(color=colors["font_color"])
     fig3d.update_layout(
         height=680,
         margin=dict(l=0, r=0, t=10, b=0),
         showlegend=False,
+        paper_bgcolor=colors["paper_bg"],
+        font=scene_font,
         scene=dict(
             xaxis_title="x",
             yaxis_title="radial y",
             zaxis_title="z",
             aspectmode="data",
-            camera=dict(eye=dict(x=1.65, y=1.35, z=0.82)),
-            xaxis=dict(showbackground=False),
-            yaxis=dict(showbackground=False),
-            zaxis=dict(showbackground=False),
+            bgcolor=colors["scene_bg"],
+            camera=dict(eye=dict(x=1.85, y=1.10, z=0.68)),
+            xaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
+            yaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
+            zaxis=dict(showbackground=False, gridcolor=colors["grid_color"], zerolinecolor=colors["grid_color"], color=colors["font_color"]),
         ),
     )
     st.plotly_chart(fig3d, use_container_width=True, config={"displaylogo": False})
@@ -537,15 +593,15 @@ with right_col:
         st.caption(
             f"The {visual_gap_pct}% gaps are only for visibility. Each disk still represents the full mathematical thickness Δx = {dx:.6g}."
         )
-    if show_true_surface:
-        st.caption("The transparent blue surface is the true solid; the gold cylinders are the disk approximation.")
+    st.caption(f"Current display style: {style_name}.")
 
 
 # ============================================================
 # Disk-by-disk data
 # ============================================================
 st.divider()
-with st.expander("Inspect every disk", expanded=False):
+show_table = st.selectbox("Show disk-by-disk table", ["No", "Yes"], index=0)
+if show_table == "Yes":
     rows = []
     cumulative = 0.0
     for i in range(n_disks):
@@ -561,12 +617,18 @@ with st.expander("Inspect every disk", expanded=False):
                 "cumulative volume": cumulative,
             }
         )
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.table(rows)
+
+st.info(
+    "If the old app showed red 'Importing a module script failed' boxes, that was likely a frontend Streamlit component issue. "
+    "This version avoids several of those components and uses a more robust layout."
+)
 
 st.markdown(
     """
     <div class="small-note">
-    Teaching idea: start with n = 4 or 6 and a visible gap, then increase n while students watch the stair-stepped cylinder model converge to the transparent true solid.
+    Teaching idea: start with n = 4 or 6 and visible gaps, then increase n while students watch the discrete solid converge. 
+    The <b>Bold red</b> preset is intentionally styled to look closer to a textbook/app disk stack.
     </div>
     """,
     unsafe_allow_html=True,
